@@ -9,8 +9,9 @@ import java.util.List;
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByAdminId(Long adminId);
-    List<Order> findByCustomerIdAndAdminId(Long customerId, Long adminId);
+    Long countByAdminId(Long adminId);
+    
+    // Add method to get top 5 recent orders
     List<Order> findTop5ByAdminIdOrderByOrderDateDesc(Long adminId);
-
-    long countByAdminId(Long adminId);
+    List<Order> findByAdminIdAndPaymentMethod(Long adminId, String paymentMethod);
 }

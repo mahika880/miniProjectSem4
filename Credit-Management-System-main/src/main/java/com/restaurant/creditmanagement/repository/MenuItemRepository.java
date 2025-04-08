@@ -8,9 +8,5 @@ import java.util.List;
 @Repository
 public interface MenuItemRepository extends JpaRepository<MenuItem, Long> {
     List<MenuItem> findByAdminId(Long adminId);
-    List<MenuItem> findByAdminIdAndAvailableTrue(Long adminId);
-
-    List<MenuItem> findByAvailableTrue();
-
     List<MenuItem> findByCategoryOrderByName(String category);
 }

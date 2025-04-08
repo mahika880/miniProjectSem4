@@ -4,6 +4,7 @@ import com.restaurant.creditmanagement.model.MenuItem;
 import com.restaurant.creditmanagement.repository.MenuItemRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -13,35 +14,65 @@ public class MenuItemService {
     @Autowired
     private MenuItemRepository menuItemRepository;
     
-    // Update the existing method to include adminId
-    public List<MenuItem> getAllMenuItems(Long adminId) {
-        return menuItemRepository.findByAdminId(adminId);
-    }
+    @Autowired
+    private PexelsService pexelsService;
     
-    public List<MenuItem> getMenuItemsByCategory(String category) {
-        return menuItemRepository.findByCategoryOrderByName(category);
-    }
-    
-    public Optional<MenuItem> getMenuItemById(Long id) {
-        return menuItemRepository.findById(id);
-    }
-    
-    public MenuItem saveMenuItem(MenuItem menuItem) {
-        // Set a default admin ID for now
+    public MenuItem addMenuItem(MenuItem menuItem) {
         if (menuItem.getAdminId() == null) {
-            menuItem.setAdminId(1L);
+            throw new IllegalArgumentException("Admin ID cannot be null");
         }
+        
+        // Fetch image URL from Pexels based on item name
+        String imageUrl = pexelsService.getImageUrlForFood(menuItem.getName());
+        menuItem.setImageUrl(imageUrl);
+        
+        // Set default values
+        if (menuItem.getIsSpecial() == null) menuItem.setIsSpecial(false);
+        if (menuItem.isAvailable() == null) menuItem.setAvailable(true);
+        
         return menuItemRepository.save(menuItem);
     }
     
+    public MenuItem updateExistingMenuItem(Long id, MenuItem updatedMenuItem) {
+        return menuItemRepository.findById(id)
+                .map(existingItem -> {
+                    existingItem.setName(updatedMenuItem.getName());
+                    existingItem.setDescription(updatedMenuItem.getDescription());
+                    existingItem.setPrice(updatedMenuItem.getPrice());
+                    existingItem.setCategory(updatedMenuItem.getCategory());
+                    existingItem.setAvailable(updatedMenuItem.isAvailable());
+                    existingItem.setImageUrl(updatedMenuItem.getImageUrl());
+                    existingItem.setIsSpecial(updatedMenuItem.getIsSpecial());
+                    existingItem.setRating(updatedMenuItem.getRating());
+                    return menuItemRepository.save(existingItem);
+                })
+                .orElseThrow(() -> new RuntimeException("Menu item not found with id: " + id));
+    }
+
+    // Add this new method
+    public MenuItem saveMenuItem(MenuItem menuItem) {
+        return menuItemRepository.save(menuItem);
+    }
+
+    // Add this new method
+    public List<MenuItem> getAllMenuItems(Long adminId) {
+        return menuItemRepository.findByAdminId(adminId);
+    }
+
+    public List<MenuItem> getMenuItemsByAdminId(Long adminId) {
+        return menuItemRepository.findByAdminId(adminId);
+    }
+
+    public MenuItem getMenuItemById(Long id) {
+        return menuItemRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Menu item not found with id: " + id));
+    }
+
+    public MenuItem updateMenuItem(MenuItem menuItem) {
+        return menuItemRepository.save(menuItem);
+    }
+
     public void deleteMenuItem(Long id) {
         menuItemRepository.deleteById(id);
-    }
-    
-    public void toggleAvailability(Long id) {
-        menuItemRepository.findById(id).ifPresent(item -> {
-            item.setAvailable(!item.isAvailable());
-            menuItemRepository.save(item);
-        });
     }
 }

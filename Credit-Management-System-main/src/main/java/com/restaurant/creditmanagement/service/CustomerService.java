@@ -166,4 +166,8 @@ public class CustomerService {
         Customer customer = customerOpt.get();
         settleBalance(customerId, customer.getCreditBalance(), adminId);
     }
+
+    public Long countCustomersByAdminId(Long adminId) {
+        return customerRepository.countByAdminId(adminId);
+    }
 }

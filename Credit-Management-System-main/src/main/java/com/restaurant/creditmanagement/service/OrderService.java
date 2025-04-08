@@ -1,8 +1,8 @@
 package com.restaurant.creditmanagement.service;
 
-import com.restaurant.creditmanagement.model.Order;
-import com.restaurant.creditmanagement.model.Customer;
+import com.restaurant.creditmanagement.model.*;
 
+import com.restaurant.creditmanagement.repository.OrderItemRepository;
 import com.restaurant.creditmanagement.repository.OrderRepository;
 import com.restaurant.creditmanagement.repository.CustomerRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,64 +13,43 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 @Service
 public class OrderService {
-    
     @Autowired
     private OrderRepository orderRepository;
-
-    @Transactional
-    public Order createOrder(Order order, Long adminId) {
-        order.setAdminId(adminId);
-        order.setOrderDate(LocalDateTime.now());
-        // Calculate total amount based on menu items
-        BigDecimal totalAmount = calculateTotalAmount(order);
-        order.setTotalAmount(totalAmount);
-        
-        // Update customer's credit balance
-        Customer customer = order.getCustomer();
-        customer.setCreditBalance(customer.getCreditBalance().add(totalAmount));
-        
-        return orderRepository.save(order);
-    }
-
-    private BigDecimal calculateTotalAmount(Order order) {
-        return order.getOrderItems().stream()
-            .map(item -> item.getMenuItem().getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
+    
+    @Autowired
+    private MenuItemService menuItemService;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private OrderItemRepository orderItemRepository;  // Add this line
 
-    public List<Order> getAllOrders() {
-        return orderRepository.findAll();
-    }
-
-    public Optional<Order> getOrderById(Long id) {
-        return orderRepository.findById(id);
-    }
-
-    public Order createOrder(Order order) {
-        // Update customer credit balance
-        Customer customer = order.getCustomer();
-        if (customer != null) {
-            BigDecimal newBalance = customer.getCreditBalance().subtract(order.getTotalAmount());
-            if (newBalance.compareTo(BigDecimal.ZERO) >= 0) {
-                customer.setCreditBalance(newBalance);
-                customerRepository.save(customer);
-                return orderRepository.save(order);
-            }
-            throw new IllegalStateException("Insufficient credit balance");
+    @Transactional
+    public Order createOrder(Order order, List<Long> menuItemIds, List<Integer> quantities) {
+        // Set creation timestamp
+        order.setCreatedAt(LocalDateTime.now());
+        
+        // Save the order first
+        Order savedOrder = orderRepository.save(order);
+        
+        // Create and save order items
+        for (int i = 0; i < menuItemIds.size(); i++) {
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrder(savedOrder);
+            orderItem.setMenuItem(menuItemService.getMenuItemById(menuItemIds.get(i)));
+            orderItem.setQuantity(quantities.get(i));
+            orderItemRepository.save(orderItem);
         }
-        throw new IllegalStateException("Customer not found");
+        
+        return savedOrder;
     }
 
-    public void deleteOrder(Long id) {
-        orderRepository.deleteById(id);
+    public List<Order> getOrdersByAdminId(Long adminId) {
+        return orderRepository.findByAdminId(adminId);
     }
 
     public List<Order> getAllOrdersByAdmin(Long adminId) {
@@ -81,9 +60,14 @@ public class OrderService {
         return orderRepository.findTop5ByAdminIdOrderByOrderDateDesc(adminId);
     }
 
-    public List<Order> getOrdersByCustomerId(Long customerId, Long adminId) {
-        return orderRepository.findByCustomerIdAndAdminId(customerId, adminId);
+    public BigDecimal calculateTotalOutstandingCredit(Long adminId) {
+        List<Order> creditOrders = orderRepository.findByAdminIdAndPaymentMethod(adminId, "CREDIT");
+        return creditOrders.stream()
+                .map(Order::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-
+    public Long countOrdersByAdminId(Long adminId) {
+        return orderRepository.countByAdminId(adminId);
+    }
 }

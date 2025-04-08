@@ -288,6 +288,11 @@ currentSlide = 0;
                     
                     <button type="submit" class="btn btn-continue">Login</button>
                     
+                    <!-- Display error message if login fails -->
+                    <div th:if="${error}" class="alert alert-danger mt-3" role="alert">
+                        <p th:text="${error}"></p>
+                    </div>
+                    
                     <div class="text-center mt-3">
                         <p>Don't have an account? <a href="/register" style="color: #98D8AA; text-decoration: none;">Register here</a></p>
                     </div>
