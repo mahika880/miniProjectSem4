@@ -16,11 +16,11 @@ import javax.servlet.http.HttpSession;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Controller
 @RequestMapping("/orders")
 public class OrderController {
-
     @Autowired
     private OrderService orderService;
 
@@ -84,12 +84,12 @@ public class OrderController {
                 return "redirect:/login";
             }
     
-            System.out.println("Creating order with customer ID: " + customerId); // Debug log
+            Customer customer = customerService.getCustomerById(customerId, adminId)
+                    .orElseThrow(() -> new IllegalArgumentException("Customer not found"));
             
             Order order = new Order();
             order.setAdminId(adminId);
-            order.setCustomer(customerService.getCustomerById(customerId, adminId)
-                    .orElseThrow(() -> new IllegalArgumentException("Customer not found")));
+            order.setCustomer(customer);
             order.setPaymentMethod(paymentMethod);
             order.setNotes(notes);
             order.setTax(tax);
@@ -97,14 +97,28 @@ public class OrderController {
             order.setOrderDate(LocalDateTime.now());
             order.setStatus("PENDING");
             
+            // Update customer's credit balance if payment method is Credit
+            if ("Credit".equalsIgnoreCase(paymentMethod)) {
+                // Ensure creditBalance is initialized
+                BigDecimal currentBalance = customer.getCreditBalance();
+                if (currentBalance == null) {
+                    currentBalance = BigDecimal.ZERO;
+                }
+                BigDecimal newBalance = currentBalance.add(totalAmount);
+                customer.setCreditBalance(newBalance);
+                customerService.updateCustomer(customer, adminId);
+                
+                // Debug log
+                System.out.println("Updated customer credit balance: " + newBalance);
+            }
+            
             Order savedOrder = orderService.createOrder(order, menuItemIds, quantities);
-            System.out.println("Order saved successfully with ID: " + savedOrder.getId()); // Debug log
             
             redirectAttributes.addFlashAttribute("success", "Order created successfully!");
             return "redirect:/orders/list";
         } catch (Exception e) {
-            System.err.println("Error creating order: " + e.getMessage()); // Debug log
-            e.printStackTrace(); // Print stack trace for debugging
+            System.err.println("Error creating order: " + e.getMessage());
+            e.printStackTrace();
             redirectAttributes.addFlashAttribute("error", "Failed to create order: " + e.getMessage());
             return "redirect:/orders/new";
         }
@@ -120,5 +134,43 @@ public class OrderController {
         List<Order> orders = orderService.getOrdersByAdminId(adminId);
         model.addAttribute("orders", orders);
         return "orders/list";
+    }
+
+    @GetMapping("/view/{id}")
+    public String viewOrder(@PathVariable Long id, Model model) {
+        Order order = orderService.getOrderById(id);
+        model.addAttribute("order", order);
+        return "orders/view";
+    }
+
+    @GetMapping("/edit/{id}")
+    public String showEditForm(@PathVariable Long id, Model model) {
+        Order order = orderService.getOrderById(id);
+        model.addAttribute("order", order);
+        return "orders/edit";
+    }
+
+    @PostMapping("/edit/{id}")
+    public String updateOrder(@PathVariable Long id, 
+                            @RequestParam Map<String, String> quantities,
+                            RedirectAttributes redirectAttributes) {
+        try {
+            orderService.updateOrderQuantities(id, quantities);
+            redirectAttributes.addFlashAttribute("success", "Order updated successfully");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", "Error updating order: " + e.getMessage());
+        }
+        return "redirect:/orders/list";
+    }
+
+    @PostMapping("/delete/{id}")
+    public String deleteOrder(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+        try {
+            orderService.deleteOrder(id);
+            redirectAttributes.addFlashAttribute("success", "Order deleted successfully");
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", "Error deleting order: " + e.getMessage());
+        }
+        return "redirect:/orders/list";
     }
 }

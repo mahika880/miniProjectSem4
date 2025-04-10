@@ -46,6 +46,6 @@ public class DashboardService {
     }
 
     public List<Order> getRecentOrders(Long adminId) {
-        return orderRepository.findTop5ByAdminIdOrderByOrderDateDesc(adminId);
+        return orderRepository.findTop5ByAdminIdOrderByCreatedAtDesc(adminId);
     }
 }

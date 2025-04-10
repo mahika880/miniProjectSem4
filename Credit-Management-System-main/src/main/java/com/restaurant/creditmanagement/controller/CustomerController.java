@@ -5,6 +5,10 @@ import com.restaurant.creditmanagement.model.Transaction;
 import com.restaurant.creditmanagement.repository.CustomerRepository;
 import com.restaurant.creditmanagement.repository.TransactionRepository;
 import com.restaurant.creditmanagement.service.CustomerService;
+// Add this import at the top with other imports
+import com.restaurant.creditmanagement.model.TransactionType;
+import java.time.LocalDateTime;
+import com.restaurant.creditmanagement.service.TransactionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -29,14 +33,37 @@ public class CustomerController {
     @Autowired
     private TransactionRepository transactionRepository;
 
+    @Autowired
+    private TransactionService transactionService;
+
     @GetMapping
     public String listCustomers(Model model, HttpSession session) {
         Long adminId = (Long) session.getAttribute("adminId");
         if (adminId == null) {
             return "redirect:/login";
         }
+        
         List<Customer> customers = customerService.getAllCustomers(adminId);
+        
+        // Calculate statistics with proper BigDecimal comparison
+        BigDecimal totalCreditBalance = customers.stream()
+                .map(Customer::getCreditBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        long totalCustomers = customers.size();
+        long customersWithNoBalance = customers.stream()
+                .filter(c -> c.getCreditBalance().compareTo(BigDecimal.ZERO) == 0)
+                .count();
+        long customersWithBalance = customers.stream()
+                .filter(c -> c.getCreditBalance().compareTo(BigDecimal.ZERO) > 0)
+                .count();
+
         model.addAttribute("customers", customers);
+        model.addAttribute("totalCreditBalance", totalCreditBalance);
+        model.addAttribute("totalCustomers", totalCustomers);
+        model.addAttribute("customersWithNoBalance", customersWithNoBalance);
+        model.addAttribute("customersWithBalance", customersWithBalance);
+
         return "customers/list";
     }
 
@@ -138,48 +165,80 @@ public class CustomerController {
         return "redirect:/customers";
     }
 
-    @PostMapping("/settle-balance/{id}")
-    public String settleBalance(@PathVariable Long id, 
-                              @RequestParam(required = false) BigDecimal settlementAmount,
-                              RedirectAttributes redirectAttributes,
-                              HttpSession session) {
-        Long adminId = (Long) session.getAttribute("adminId");
-        if (adminId == null) {
-            return "redirect:/login";
-        }
-        
+    @PostMapping("/{id}/settle")
+    public String settleBalance(@PathVariable Long id,
+                              @RequestParam BigDecimal amount,
+                              @RequestParam String paymentMethod,
+                              @RequestParam(required = false) String notes,
+                              HttpSession session,
+                              RedirectAttributes redirectAttributes) {
         try {
-            if (settlementAmount != null) {
-                customerService.settleBalance(id, settlementAmount, adminId);
-            } else {
-                customerService.settleBalance(id, adminId);
+            Long adminId = (Long) session.getAttribute("adminId");
+            if (adminId == null) {
+                return "redirect:/login";
             }
-            redirectAttributes.addFlashAttribute("success", "Balance settled successfully!");
+
+            Customer customer = customerService.getCustomerById(id, adminId)
+                    .orElseThrow(() -> new IllegalArgumentException("Customer not found"));
+
+            // Validate settlement amount
+            if (amount.compareTo(customer.getCreditBalance()) > 0) {
+                throw new IllegalArgumentException("Settlement amount cannot exceed outstanding balance");
+            }
+
+            // Update customer's credit balance
+            BigDecimal newBalance = customer.getCreditBalance().subtract(amount);
+            customer.setCreditBalance(newBalance);
+            customerService.updateCustomer(customer, adminId);
+
+            // Create transaction record
+            // Update this part
+            Transaction transaction = new Transaction();
+            transaction.setCustomer(customer);
+            transaction.setAmount(amount);
+            transaction.setType(TransactionType.SETTLEMENT);  // Changed from String to enum
+            transaction.setPaymentMethod(paymentMethod);
+            transaction.setNotes(notes);
+            transaction.setStatus("COMPLETED");
+            transaction.setTransactionDate(LocalDateTime.now());
+            transaction.setAdminId(adminId);
+            transactionService.saveTransaction(transaction);
+
+            redirectAttributes.addFlashAttribute("success", 
+                "Payment of ₹" + amount + " successfully processed");
             return "redirect:/customers/view/" + id;
-        } catch (RuntimeException e) {
-            redirectAttributes.addFlashAttribute("error", e.getMessage());
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", "Failed to process payment: " + e.getMessage());
             return "redirect:/customers/view/" + id;
         }
     }
 
     @GetMapping("/view/{id}")
-    public String viewCustomer(@PathVariable Long id, Model model, HttpSession session) {
+    public String viewCustomer(@PathVariable Long id, Model model, HttpSession session, RedirectAttributes redirectAttributes) {
         Long adminId = (Long) session.getAttribute("adminId");
         if (adminId == null) {
             return "redirect:/login";
         }
 
-        Optional<Customer> customerOpt = customerService.getCustomerById(id, adminId);
-        if (customerOpt.isEmpty()) {
-            throw new RuntimeException("Customer not found");
+        try {
+            Optional<Customer> customerOpt = customerService.getCustomerById(id, adminId);
+            if (customerOpt.isEmpty()) {
+                redirectAttributes.addFlashAttribute("error", "Customer not found");
+                return "redirect:/customers";
+            }
+
+            Customer customer = customerOpt.get();
+            List<Transaction> transactions = transactionRepository.findByCustomer_IdOrderByTransactionDateDesc(id);
+
+            model.addAttribute("customer", customer);
+            model.addAttribute("transactions", transactions);
+            model.addAttribute("creditTrend", 0);
+            
+            return "customers/view";
+        } catch (Exception e) {
+            redirectAttributes.addFlashAttribute("error", "Error loading customer: " + e.getMessage());
+            return "redirect:/customers";
         }
-
-        Customer customer = customerOpt.get();
-        List<Transaction> transactions = transactionRepository.findByCustomerIdOrderByTransactionDateDesc(id);
-
-        model.addAttribute("customer", customer);
-        model.addAttribute("transactions", transactions);
-        return "customers/view";
     }
 
     @GetMapping("/search")
@@ -193,4 +252,7 @@ public class CustomerController {
         model.addAttribute("customers", customers);
         return "customers/list";
     }
+
+    // Remove the duplicate listCustomers method that starts here
+    // The original listCustomers method at the top of the file is the correct one
 }
